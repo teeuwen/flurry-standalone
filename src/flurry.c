@@ -39,6 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xinerama.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -138,17 +139,11 @@ flurry_info_t *new_flurry_info(global_info_t *global, int streams, ColorModes co
     return flurry;
 }
 
-static GLXContext *init_GL(Display *dpy, Window win)
+static GLXContext *init_GL(Display *dpy, Window win, Visual *visual)
 {
   GLXContext glx_context = 0;
   XVisualInfo vi_in, *vi_out;
   int out_count;
-  XWindowAttributes wa;
-
-  /* TODO CHECKS */
-  XGetWindowAttributes(dpy, win, &wa);
-
-  Visual *visual = wa.visual;
 
 # ifdef HAVE_JWZGLES
   jwzgles_reset();
@@ -336,7 +331,7 @@ static void reshape_flurry(Display *dpy, int width, int height)
     GLResize(global, (float)width, (float)height);
 }
 
-static void init_flurry(Display *dpy, Window win)
+static void init_flurry(Display *dpy, Window win, Visual *visual, int w, int h)
 {
     int i;
     global_info_t *global;
@@ -460,13 +455,13 @@ static void init_flurry(Display *dpy, Window win)
     default: {
         exit(1);
     }
-    } 
-
-    if ((global->glx_context = init_GL(dpy, win)) != NULL) {
-	    /* XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX */
-	reshape_flurry(dpy, 1366, 768);
-	GLSetupRC(global);
     }
+
+	if (!(global->glx_context = init_GL(dpy, win, visual)))
+		exit(1);
+
+	reshape_flurry(dpy, w, h);
+	GLSetupRC(global);
 }
 
 static void draw_flurry(Display *dpy, Window win)
@@ -558,38 +553,55 @@ static void release_flurry(ModeInfo * mi)
 int main(int argc, char **argv)
 {
 	Display *dpy;
+	XineramaScreenInfo *screens;
 	Window win;
+	XWindowAttributes wa;
+	XEvent xev;
+	int i, j;
 
 	if (!(dpy = XOpenDisplay(NULL)))
 		return 1;
 
-	if (!(win = XCreateSimpleWindow(dpy, RootWindow(dpy, 0), 0, 0, 10, 10,
+	if (!(win = XCreateSimpleWindow(dpy, RootWindow(dpy, 0), 0, 0, 320, 200,
 					0, BlackPixel(dpy, 0),
 					BlackPixel(dpy, 0))))
 		return 1;
 
-	Atom wm_state = XInternAtom(dpy, "_NET_WM_STATE", False);
-	Atom fullscreen = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+	XMapWindow(dpy, win);
 
-	XEvent xev;
-    memset(&xev, 0, sizeof(xev));
-    xev.type = ClientMessage;
-    xev.xclient.window = win;
-    xev.xclient.message_type = wm_state;
-    xev.xclient.format = 32;
-    xev.xclient.data.l[0] = 1;
-    xev.xclient.data.l[1] = fullscreen;
-    xev.xclient.data.l[2] = 0;
+	memset(&xev, 0, sizeof(XEvent));
+	xev.type = ClientMessage;
+	xev.xclient.window = win;
+	xev.xclient.message_type = XInternAtom(dpy, "_NET_WM_STATE", 0);
+	xev.xclient.format = 32;
+	xev.xclient.data.l[0] = 1;
+	xev.xclient.data.l[1] = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", 0);
+	xev.xclient.data.l[2] = 0;
 
-    XMapWindow(dpy, win);
+	XSendEvent(dpy, RootWindow(dpy, 0), 0, SubstructureRedirectMask |
+			SubstructureNotifyMask, &xev);
 
-    XSendEvent (dpy, DefaultRootWindow(dpy), False,
-                    SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+	XFlush(dpy);
 
-    XFlush(dpy);
+	/* TODO We can handle that... */
+	if (!XineramaIsActive(dpy))
+		return 1;
 
-    init_flurry(dpy, win);
+	screens = XineramaQueryScreens(dpy, &j);
 
-    for(;;)
-	draw_flurry(dpy, win);
+	for (i = 0; i < j; i++)
+		if (screens[i].screen_number == 0)
+			break;
+
+	if (!(XGetWindowAttributes(dpy, RootWindow(dpy, 0), &wa)))
+		return 1;
+
+	init_flurry(dpy, win, wa.visual, screens[i].width, screens[i].height);
+
+	printf("%d x %d\n", screens[i].width, screens[i].height);
+
+	for (;;)
+		draw_flurry(dpy, win);
+
+	return 0;
 }

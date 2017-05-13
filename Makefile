@@ -3,7 +3,7 @@
 #
 
 CFLAGS		:= -Wall -Wextra -fdiagnostics-color=auto -std=gnu89 -g
-LDLIBS		:= -lglfw -lGL -lGLU -lalut -lm -lX11
+LDLIBS		:= -lGL -lGLU -lalut -lm -lX11 -lXinerama
 
 flurry-o	= src/flurry.o src/flurry-smoke.o src/flurry-spark.o src/flurry-star.o src/flurry-texture.o
 flurry-i	= -I src/include
